@@ -1,0 +1,71 @@
+diff --git a/core/src/gui/style.cpp b/core/src/gui/style.cpp
+index d539abef..e0804c12 100644
+--- a/core/src/gui/style.cpp
++++ b/core/src/gui/style.cpp
+@@ -43,12 +43,65 @@ namespace style {
+         const ImWchar hugeRange[] = { 'S', 'S', 'D', 'D', 'R', 'R', '+', '+', ' ', ' ', 0 };
+         hugeBuilder.AddRanges(hugeRange);
+         hugeBuilder.BuildRanges(&hugeRanges);
+-        
++
+         // Add bigger fonts for frequency select and title
+         baseFont = fonts->AddFontFromFileTTF(((std::string)(resDir + "/fonts/Roboto-Medium.ttf")).c_str(), 16.0f * uiScale, NULL, baseRanges.Data);
++        // NOTE: ImGui MergeMode appends to the most recently added non-merge font,
++        // so the CJK merge below MUST come right after baseFont is added (before bigFont/hugeFont).
++        // Merge a CJK fallback into baseFont so bookmark names etc. render correctly.
++        // Search order: bundled (res/fonts), then OS-bundled system font.
++        ImFontConfig cfgCJK;
++        cfgCJK.MergeMode = true;
++        cfgCJK.PixelSnapH = true;
++        const ImWchar* cjkRanges = fonts->GetGlyphRangesJapanese();
++        const std::string cjkCandidates[] = {
++            resDir + "/fonts/NotoSansJP-Regular.ttf",
++            resDir + "/fonts/NotoSansCJK-Regular.ttc",
++#ifdef __APPLE__
++            "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
++            "/System/Library/Fonts/Hiragino Sans GB.ttc",
++            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
++#elif defined(_WIN32)
++            "C:/Windows/Fonts/meiryo.ttc",
++            "C:/Windows/Fonts/YuGothM.ttc",
++            "C:/Windows/Fonts/msgothic.ttc",
++#else
++            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
++            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
++#endif
++        };
++        bool cjkLoaded = false;
++        for (const auto& p : cjkCandidates) {
++            if (!std::filesystem::exists(p)) {
++                flog::info("CJK font candidate not found: {}", p);
++                continue;
++            }
++            ImFont* f = fonts->AddFontFromFileTTF(p.c_str(), 16.0f * uiScale, &cfgCJK, cjkRanges);
++            if (f) {
++                flog::info("CJK font merged: {}", p);
++                cjkLoaded = true;
++                break;
++            } else {
++                flog::warn("CJK font load failed (stb_truetype rejected): {}", p);
++            }
++        }
++        if (!cjkLoaded) {
++            flog::warn("No CJK fallback font loaded; non-Latin characters will be missing glyphs");
++        }
++
++        // Add remaining big/huge fonts AFTER the CJK merge so they don't intercept the merge.
+         bigFont = fonts->AddFontFromFileTTF(((std::string)(resDir + "/fonts/Roboto-Medium.ttf")).c_str(), 45.0f * uiScale, NULL, bigRanges.Data);
+         hugeFont = fonts->AddFontFromFileTTF(((std::string)(resDir + "/fonts/Roboto-Medium.ttf")).c_str(), 128.0f * uiScale, NULL, hugeRanges.Data);
+ 
++        // Force atlas build so we can verify glyph counts before runtime.
++        fonts->Build();
++        flog::info("Font atlas built. baseFont glyphs: {}, IsBuilt={}",
++                   (int)baseFont->Glyphs.Size, fonts->IsBuilt() ? 1 : 0);
++        bool hasHiragana_A = baseFont->FindGlyphNoFallback((ImWchar)0x3042) != NULL; // あ
++        bool hasKanji = baseFont->FindGlyphNoFallback((ImWchar)0x6F22) != NULL;      // 漢
++        flog::info("baseFont coverage: U+3042(あ)={}, U+6F22(漢)={}",
++                   hasHiragana_A ? "yes" : "no", hasKanji ? "yes" : "no");
++
+         return true;
+     }
+ 
