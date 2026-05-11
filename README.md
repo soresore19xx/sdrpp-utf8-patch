@@ -78,9 +78,25 @@ baseFont coverage: U+3042(あ)=yes, U+6F22(漢)=yes
 
 ## 既知の限界
 
-- **IME 直接入力は不可**: macOS GLFW backend が `NSTextInputClient` の marked text / confirmed text を `glfwSetCharCallback` に橋渡ししていないため、IME 経由の文字入力が ImGui に届かない。**クリップボード貼付け(Ctrl+V / Cmd+V)経由なら日本語入力可能**。GLFW 側の patch fork または `imgui_impl_osx.mm` への切替で対応可能だが、本パッチのスコープ外。
+- **IME 直接入力は不可**: macOS GLFW backend が `NSTextInputClient` の marked text / confirmed text を `glfwSetCharCallback` に橋渡ししていないため、IME 経由の文字入力が ImGui に届かない。**現状は OS のクリップボード貼付け(Ctrl+V / Cmd+V)経由でのみ日本語入力可能**。詳細は [TODO](#todo) 参照。
 - **Variable Font 非対応**: stb_truetype v1.20 は variable fonts(`fvar` table)を解釈しないため、`NotoSansJP[wght].ttf` のような variable 形式は static 版を使うべき。本 README の curl URL は static OTF を取得する。
 - **font 容量**: NotoSansCJKjp-Regular.otf は約 16 MB。bundle サイズ重視なら別軽量 CJK フォント(IPAex Gothic 等)に置換可能。
+
+## TODO
+
+- [ ] **IME 直接入力対応**(macOS / Linux)
+  - 現状: macOS で IME(かな漢字変換)モードに切り替わるが、確定文字列が ImGui に届かないため直接入力できない。回避策として Ctrl+V / Cmd+V のクリップボード貼付けは動作する。
+  - 原因: SDR++ が使用する GLFW backend (`core/backends/glfw/imgui/imgui_impl_glfw.cpp`) の `CharCallback` 経路でしか文字入力を受け取っていない。GLFW の macOS Cocoa 実装は `NSTextInputClient` の marked text(preedit)を `glfwSetCharCallback` に渡していない。
+  - 想定される対応案:
+    1. **GLFW を IME 対応 fork に差し替え**(例: [glfw-im](https://github.com/abakh/glfw-im)、または `cocoa_window.m` への IME パッチ)
+    2. **`imgui_impl_osx.mm` (ImGui 公式 macOS native backend) への切り替え**: NSTextInputClient を完全実装。GLFW backend と併用するハイブリッド構成が必要で改修規模は大きい
+    3. **SDR++ 内に独自 IME hook を追加**: Cocoa の NSEvent を直接フックして confirmed text を `io.AddInputCharactersUTF8()` に渡す
+  - 検証項目:
+    - macOS の IME(ことえり / Google 日本語入力 / ATOK)で「日本語テスト」と直接打鍵 → ブックマーク名に確定文字列が反映されるか
+    - Windows IME(MS-IME / Google 日本語入力)で同様
+    - Linux fcitx / ibus で同様
+- [ ] **bundle font の軽量化検討**: NotoSansCJKjp-Regular.otf 16MB → IPAex Gothic / M PLUS 1 Code 等の subset で 2〜5MB 程度に圧縮
+- [ ] **パッチ upstream 提案**: SDR++ 本家 (AlexandreRouma/SDRPlusPlus) への PR 化を検討
 
 ## ライセンス
 
