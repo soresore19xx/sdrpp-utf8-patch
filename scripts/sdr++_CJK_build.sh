@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 sdrpp-utf8-patch contributors
+#
 # SDR++ CJK build script — MacPorts 経由で SDR++ を fresh clone してから本リポジトリの
 # CJK font + macOS IME 両パッチを適用し、ビルドして /Applications/SDR++.app に展開する。
 #

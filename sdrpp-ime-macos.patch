@@ -49,10 +49,20 @@ index cdf0c5c1..bd0738f2 100644
              flog::warn("Could not init using OpenGL with normal GLSL version, falling back to GLSL 1.2");
 diff --git a/core/backends/glfw/ime_macos.h b/core/backends/glfw/ime_macos.h
 new file mode 100644
-index 00000000..8198b700
+index 00000000..bc9f072f
 --- /dev/null
 +++ b/core/backends/glfw/ime_macos.h
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,25 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++//
++// sdrpp-utf8-patch — CJK / macOS IME support for SDR++
++// Copyright (C) 2026 sdrpp-utf8-patch contributors
++//
++// This file is added by an external patch to SDR++
++// (https://github.com/AlexandreRouma/SDRPlusPlus). SDR++ is licensed under
++// the GNU General Public License v3 or later; this file inherits the same
++// license.
++
 +#pragma once
 +
 +struct GLFWwindow;
@@ -70,10 +80,20 @@ index 00000000..8198b700
 +}
 diff --git a/core/backends/glfw/ime_macos.mm b/core/backends/glfw/ime_macos.mm
 new file mode 100644
-index 00000000..eecc811e
+index 00000000..1bf2ad98
 --- /dev/null
 +++ b/core/backends/glfw/ime_macos.mm
-@@ -0,0 +1,224 @@
+@@ -0,0 +1,234 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++//
++// sdrpp-utf8-patch — CJK / macOS IME support for SDR++
++// Copyright (C) 2026 sdrpp-utf8-patch contributors
++//
++// This file is added by an external patch to SDR++
++// (https://github.com/AlexandreRouma/SDRPlusPlus). SDR++ is licensed under
++// the GNU General Public License v3 or later; this file inherits the same
++// license.
++//
 +// macOS IME support for SDR++ (Frequency Manager 等での日本語直接入力)
 +//
 +// 仕組み (v3):

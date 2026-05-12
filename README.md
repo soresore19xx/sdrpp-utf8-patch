@@ -186,8 +186,8 @@ SDR_IME_LOG=1 stdbuf -oL -eL /path/to/SDR++.app/Contents/MacOS/sdrpp 2>&1 | tee 
 
 ## ライセンス
 
-- 本パッチコード: SDR++ 本体に準ずる(GPLv3)
-- 同梱を推奨する `NotoSansJP-Regular.ttf` (Noto Sans CJK JP): [SIL Open Font License 1.1](https://github.com/notofonts/noto-cjk/blob/main/Sans/LICENSE)
+- 本リポジトリの全コード(`sdrpp-cjk-font.patch` / `sdrpp-ime-macos.patch` / `scripts/sdr++_CJK_build.sh` / および patch 経由で SDR++ に追加される `core/backends/glfw/ime_macos.{h,mm}`): **GNU General Public License v3.0 or later (GPL-3.0-or-later)**。SDR++ 本体が GPLv3 であり、本パッチは SDR++ のソースを改変・拡張する派生物として同ライセンスを継承する。全文は本リポジトリ直下の [`LICENSE`](LICENSE) を参照。新規追加ファイルおよびスクリプトには SPDX-License-Identifier コメントを付与済。
+- 利用を推奨する `NotoSansJP-Regular.ttf` (Noto Sans CJK JP): [SIL Open Font License 1.1](https://github.com/notofonts/noto-cjk/blob/main/Sans/LICENSE)。本リポジトリでは同梱せず、ビルド時に必要に応じて curl で取得する形(配布物には含まれない)。
 
 ## 参考
 
