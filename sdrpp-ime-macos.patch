@@ -70,10 +70,10 @@ index 00000000..8198b700
 +}
 diff --git a/core/backends/glfw/ime_macos.mm b/core/backends/glfw/ime_macos.mm
 new file mode 100644
-index 00000000..a0f2b686
+index 00000000..eecc811e
 --- /dev/null
 +++ b/core/backends/glfw/ime_macos.mm
-@@ -0,0 +1,215 @@
+@@ -0,0 +1,224 @@
 +// macOS IME support for SDR++ (Frequency Manager 等での日本語直接入力)
 +//
 +// 仕組み (v3):
@@ -117,6 +117,10 @@ index 00000000..a0f2b686
 +    static IMP       g_origInsertText    = NULL;
 +    static IMP       g_origSetMarkedText = NULL;
 +    static IMP       g_origUnmarkText    = NULL;
++
++    // 入力文字内容を flog に出すかどうか (env var SDR_IME_LOG=1 で有効)。
++    // default OFF: 通常運用時にユーザーがタイプした文字列が log に残らないようにする。
++    static bool      g_imeLog            = false;
 +
 +    static int CountUtf8Codepoints(const char* utf8) {
 +        int n = 0;
@@ -188,7 +192,7 @@ index 00000000..a0f2b686
 +        EraseCurrentPreedit(io);
 +
 +        if (!chars || chars.length == 0) {
-+            flog::info("[IME] insertText: <empty>");
++            if (g_imeLog) { flog::info("[IME] insertText: <empty>"); }
 +            return;
 +        }
 +        const char* utf8 = [chars UTF8String];
@@ -196,7 +200,7 @@ index 00000000..a0f2b686
 +            flog::warn("[IME] insertText: UTF8String returned null");
 +            return;
 +        }
-+        flog::info("[IME] insertText: '{}' (chars={})", utf8, (int)chars.length);
++        if (g_imeLog) { flog::info("[IME] insertText: '{}' (chars={})", utf8, (int)chars.length); }
 +        io.AddInputCharactersUTF8(utf8);
 +    }
 +
@@ -209,7 +213,7 @@ index 00000000..a0f2b686
 +        EraseCurrentPreedit(io);
 +
 +        if (!preedit || preedit.length == 0) {
-+            flog::info("[IME] setMarkedText: <clear>");
++            if (g_imeLog) { flog::info("[IME] setMarkedText: <clear>"); }
 +            return;
 +        }
 +        const char* utf8 = [preedit UTF8String];
@@ -217,7 +221,7 @@ index 00000000..a0f2b686
 +            flog::warn("[IME] setMarkedText: UTF8String returned null");
 +            return;
 +        }
-+        flog::info("[IME] setMarkedText: '{}' (len={})", utf8, (int)preedit.length);
++        if (g_imeLog) { flog::info("[IME] setMarkedText: '{}' (len={})", utf8, (int)preedit.length); }
 +        io.AddInputCharactersUTF8(utf8);
 +        g_preeditCodepoints = CountUtf8Codepoints(utf8);
 +    }
@@ -226,13 +230,17 @@ index 00000000..a0f2b686
 +    static void ImeUnmarkText(id self, SEL _cmd) {
 +        ImGuiIO& io = ImGui::GetIO();
 +        EraseCurrentPreedit(io);
-+        flog::info("[IME] unmarkText");
++        if (g_imeLog) { flog::info("[IME] unmarkText"); }
 +        if (g_origUnmarkText) {
 +            ((void (*)(id, SEL))g_origUnmarkText)(self, _cmd);
 +        }
 +    }
 +
 +    void ime_macos_init(GLFWwindow* window) {
++        // env var で診断ログを opt-in 有効化 (default OFF — タイプ内容を log に残さないため)
++        const char* env = getenv("SDR_IME_LOG");
++        g_imeLog = (env && env[0] && env[0] != '0');
++
 +        if (!window) {
 +            flog::warn("[IME] ime_macos_init: window is null");
 +            return;
@@ -278,12 +286,13 @@ index 00000000..a0f2b686
 +
 +        ImGui::GetIO().SetPlatformImeDataFn = ImePlatformImeDataFn;
 +
-+        flog::info("[IME] macOS hook installed on {} (firstRect={}, insertText={}, setMarkedText={}, unmarkText={})",
++        flog::info("[IME] macOS hook installed on {} (firstRect={}, insertText={}, setMarkedText={}, unmarkText={}, log={})",
 +                   clsName.UTF8String,
 +                   rectM ? "yes" : "no",
 +                   insertM ? "yes" : "no",
 +                   markM ? "yes" : "no",
-+                   unmarkM ? "yes" : "no");
++                   unmarkM ? "yes" : "no",
++                   g_imeLog ? "on (SDR_IME_LOG=1)" : "off");
 +    }
 +
 +}

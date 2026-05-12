@@ -85,7 +85,7 @@ sh make_macos_bundle.sh ./build ./SDR++.app
 起動時の flog に以下が出ていれば成功:
 
 ```
-[IME] macOS hook installed on GLFWContentView (firstRect=yes, insertText=yes, setMarkedText=yes, unmarkText=yes)
+[IME] macOS hook installed on GLFWContentView (firstRect=yes, insertText=yes, setMarkedText=yes, unmarkText=yes, log=off)
 CJK font merged: /path/to/NotoSansJP-Regular.ttf
 Font atlas built. baseFont glyphs: 3960, IsBuilt=1
 baseFont coverage: U+3042(あ)=yes, U+6F22(漢)=yes
@@ -97,7 +97,15 @@ baseFont coverage: U+3042(あ)=yes, U+6F22(漢)=yes
 
 Frequency Manager の Add ダイアログで InputText に focus → かな漢字変換モードで `nihon` 入力 → スペースで変換 → Enter で確定。InputText 内に「ｎ→に→にｈ→にほ→にほｎ→日本」と変換途中の文字も逐次表示され、Enter で確定。Apply で反映される。
 
-flog 出力例(`nihon` → Space → Enter):
+### 診断ログを有効化する (`SDR_IME_LOG=1`)
+
+通常時はタイプ内容を log に残さないため、`setMarkedText:` / `insertText:` / `unmarkText` の本文ログは default では出力しない(起動時の `[IME] macOS hook installed` 1 行のみ)。挙動を細かく追跡したいときは環境変数 `SDR_IME_LOG=1` をセットして起動する:
+
+```sh
+SDR_IME_LOG=1 stdbuf -oL -eL /path/to/SDR++.app/Contents/MacOS/sdrpp 2>&1 | tee /tmp/sdrpp.log
+```
+
+起動 1 行目が `log=on (SDR_IME_LOG=1)` になっていれば診断ログが有効。`nihon` → Space → Enter の出力例:
 
 ```
 [IME] setMarkedText: 'ｎ' (len=1)
@@ -109,11 +117,7 @@ flog 出力例(`nihon` → Space → Enter):
 [IME] insertText: '日本' (chars=2)            ← Enter 確定
 ```
 
-flog 出力を見るには Terminal から起動する(**`stdbuf -oL` 必須**、無いと stdout block buffer に溜まって早期終了で消える):
-
-```sh
-stdbuf -oL -eL /path/to/SDR++.app/Contents/MacOS/sdrpp 2>&1 | tee /tmp/sdrpp.log
-```
+`stdbuf -oL -eL` は stdout block buffer のため早期終了時にログ末尾が欠落するのを防ぐ用途。
 
 #### トラブルシュート
 
