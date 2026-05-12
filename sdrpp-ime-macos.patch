@@ -1,0 +1,291 @@
+diff --git a/core/CMakeLists.txt b/core/CMakeLists.txt
+index f194d7ae..22dd77e8 100644
+--- a/core/CMakeLists.txt
++++ b/core/CMakeLists.txt
+@@ -21,6 +21,10 @@ endif ()
+ # Configure backend sources
+ if (OPT_BACKEND_GLFW)
+     file(GLOB_RECURSE BACKEND_SRC "backends/glfw/*.cpp" "backends/glfw/*.c")
++    if (APPLE)
++        file(GLOB_RECURSE BACKEND_OBJC_SRC "backends/glfw/*.mm")
++        list(APPEND BACKEND_SRC ${BACKEND_OBJC_SRC})
++    endif (APPLE)
+ endif (OPT_BACKEND_GLFW)
+ if (OPT_BACKEND_ANDROID)
+     file(GLOB_RECURSE BACKEND_SRC "backends/android/*.cpp" "backends/android/*.c")
+@@ -160,6 +164,10 @@ else()
+         target_link_libraries(sdrpp_core PUBLIC stdc++fs)
+     endif ()
+ 
++    if (APPLE AND OPT_BACKEND_GLFW)
++        target_link_libraries(sdrpp_core PUBLIC "-framework Cocoa")
++    endif ()
++
+ endif ()
+ 
+ set(CORE_FILES ${RUNTIME_OUTPUT_DIRECTORY} PARENT_SCOPE)
+diff --git a/core/backends/glfw/backend.cpp b/core/backends/glfw/backend.cpp
+index cdf0c5c1..bd0738f2 100644
+--- a/core/backends/glfw/backend.cpp
++++ b/core/backends/glfw/backend.cpp
+@@ -11,6 +11,7 @@
+ #include <stb_image.h>
+ #include <stb_image_resize.h>
+ #include <gui/gui.h>
++#include "ime_macos.h"
+ 
+ namespace backend {
+     const char* OPENGL_VERSIONS_GLSL[] = {
+@@ -177,6 +178,10 @@ namespace backend {
+         // Setup Platform/Renderer bindings
+         ImGui_ImplGlfw_InitForOpenGL(window, true);
+ 
++        // Install macOS IME hook (no-op on other platforms).
++        // Must be after ImGui context creation so io.SetPlatformImeDataFn is wirable.
++        ime_macos_init(window);
++
+         if (!ImGui_ImplOpenGL3_Init(glsl_version)) {
+             // If init fail, try to fall back on GLSL 1.2
+             flog::warn("Could not init using OpenGL with normal GLSL version, falling back to GLSL 1.2");
+diff --git a/core/backends/glfw/ime_macos.h b/core/backends/glfw/ime_macos.h
+new file mode 100644
+index 00000000..8198b700
+--- /dev/null
++++ b/core/backends/glfw/ime_macos.h
+@@ -0,0 +1,15 @@
++#pragma once
++
++struct GLFWwindow;
++
++namespace backend {
++
++#ifdef __APPLE__
++    // Install macOS IME hooks on the given GLFW window.
++    // Must be called AFTER glfwCreateWindow() and AFTER ImGui::CreateContext().
++    void ime_macos_init(GLFWwindow* window);
++#else
++    inline void ime_macos_init(GLFWwindow*) {}
++#endif
++
++}
+diff --git a/core/backends/glfw/ime_macos.mm b/core/backends/glfw/ime_macos.mm
+new file mode 100644
+index 00000000..a0f2b686
+--- /dev/null
++++ b/core/backends/glfw/ime_macos.mm
+@@ -0,0 +1,215 @@
++// macOS IME support for SDR++ (Frequency Manager 等での日本語直接入力)
++//
++// 仕組み (v3):
++//   1. ImGui 1.87 の io.SetPlatformImeDataFn コールバックで現在の InputText caret 位置を取得
++//   2. GLFWContentView の firstRectForCharacterRange:actualRange: を Objective-C runtime
++//      swizzle で差し替え、IME 候補ウィンドウを caret 直下に表示
++//   3. GLFWContentView の setMarkedText:selectedRange:replacementRange: を swizzle で差し替え、
++//      preedit (変換中文字列) を ImGui InputText に inline 表示する:
++//        - 直前の preedit を Backspace event で削除
++//        - 新 preedit を io.AddInputCharactersUTF8() で挿入
++//   4. GLFWContentView の insertText:replacementRange: を swizzle で差し替え、IME 確定文字列を
++//      直前の preedit を Backspace 削除した上で確定挿入する
++//   5. GLFWContentView の unmarkText を swizzle で差し替え、preedit を Backspace で消去する
++//      (IME キャンセル時)
++//
++// このファイルは __APPLE__ かつ OPT_BACKEND_GLFW でのみコンパイルされる。
++
++#ifdef __APPLE__
++
++#import <Cocoa/Cocoa.h>
++#import <objc/runtime.h>
++
++#define GLFW_INCLUDE_NONE
++#define GLFW_EXPOSE_NATIVE_COCOA
++#include <GLFW/glfw3.h>
++#include <GLFW/glfw3native.h>
++
++#include "imgui.h"
++#include <utils/flog.h>
++
++#include "ime_macos.h"
++
++namespace backend {
++
++    static NSWindow* g_imeWindow         = nil;
++    static ImVec2    g_imeCaret          = ImVec2(0, 0);
++    static float     g_imeLineHeight     = 16.0f;
++    static bool      g_imeWantVisible    = false;
++    static int       g_preeditCodepoints = 0;
++    static IMP       g_origFirstRect     = NULL;
++    static IMP       g_origInsertText    = NULL;
++    static IMP       g_origSetMarkedText = NULL;
++    static IMP       g_origUnmarkText    = NULL;
++
++    static int CountUtf8Codepoints(const char* utf8) {
++        int n = 0;
++        for (const char* p = utf8; *p; ) {
++            unsigned char c = (unsigned char)*p;
++            if (c < 0x80) p += 1;
++            else if ((c & 0xE0) == 0xC0) p += 2;
++            else if ((c & 0xF0) == 0xE0) p += 3;
++            else if ((c & 0xF8) == 0xF0) p += 4;
++            else p += 1;
++            n++;
++        }
++        return n;
++    }
++
++    static void EraseCurrentPreedit(ImGuiIO& io) {
++        for (int i = 0; i < g_preeditCodepoints; i++) {
++            io.AddKeyEvent(ImGuiKey_Backspace, true);
++            io.AddKeyEvent(ImGuiKey_Backspace, false);
++        }
++        g_preeditCodepoints = 0;
++    }
++
++    static void ImePlatformImeDataFn(ImGuiViewport*, ImGuiPlatformImeData* data) {
++        g_imeWantVisible = data->WantVisible;
++        g_imeCaret       = data->InputPos;
++        g_imeLineHeight  = data->InputLineHeight > 0.0f ? data->InputLineHeight : 16.0f;
++    }
++
++    static NSRect ImeFirstRectForCharacterRange(id self, SEL _cmd, NSRange range, NSRangePointer actualRange) {
++        if (actualRange) { *actualRange = range; }
++
++        NSWindow* win = g_imeWindow;
++        if (!win || !g_imeWantVisible) {
++            if (g_origFirstRect) {
++                return ((NSRect (*)(id, SEL, NSRange, NSRangePointer))g_origFirstRect)(self, _cmd, range, actualRange);
++            }
++            return NSMakeRect(0, 0, 0, 0);
++        }
++
++        NSView* view = [win contentView];
++        NSRect viewFrame = [view frame];
++
++        CGFloat x = g_imeCaret.x;
++        CGFloat y = viewFrame.size.height - g_imeCaret.y - g_imeLineHeight;
++        NSRect localRect = NSMakeRect(x, y, 1.0, g_imeLineHeight);
++
++        NSRect windowRect = [view convertRect:localRect toView:nil];
++        NSRect screenRect = [win convertRectToScreen:windowRect];
++        return screenRect;
++    }
++
++    static NSString* ExtractString(id stringOrAttr) {
++        if (!stringOrAttr) return nil;
++        if ([stringOrAttr isKindOfClass:[NSAttributedString class]]) {
++            return [(NSAttributedString*)stringOrAttr string];
++        }
++        if ([stringOrAttr isKindOfClass:[NSString class]]) {
++            return (NSString*)stringOrAttr;
++        }
++        return nil;
++    }
++
++    // 確定文字列 → 直前 preedit を Backspace 削除した後に挿入
++    static void ImeInsertText(id self, SEL _cmd, id string, NSRange replacementRange) {
++        NSString* chars = ExtractString(string);
++        ImGuiIO& io = ImGui::GetIO();
++
++        EraseCurrentPreedit(io);
++
++        if (!chars || chars.length == 0) {
++            flog::info("[IME] insertText: <empty>");
++            return;
++        }
++        const char* utf8 = [chars UTF8String];
++        if (!utf8) {
++            flog::warn("[IME] insertText: UTF8String returned null");
++            return;
++        }
++        flog::info("[IME] insertText: '{}' (chars={})", utf8, (int)chars.length);
++        io.AddInputCharactersUTF8(utf8);
++    }
++
++    // preedit (composing) → 直前 preedit を Backspace 削除して新 preedit を挿入
++    // → InputText 内に inline で変換中文字列が見える
++    static void ImeSetMarkedText(id self, SEL _cmd, id string, NSRange selectedRange, NSRange replacementRange) {
++        NSString* preedit = ExtractString(string);
++        ImGuiIO& io = ImGui::GetIO();
++
++        EraseCurrentPreedit(io);
++
++        if (!preedit || preedit.length == 0) {
++            flog::info("[IME] setMarkedText: <clear>");
++            return;
++        }
++        const char* utf8 = [preedit UTF8String];
++        if (!utf8) {
++            flog::warn("[IME] setMarkedText: UTF8String returned null");
++            return;
++        }
++        flog::info("[IME] setMarkedText: '{}' (len={})", utf8, (int)preedit.length);
++        io.AddInputCharactersUTF8(utf8);
++        g_preeditCodepoints = CountUtf8Codepoints(utf8);
++    }
++
++    // IME キャンセル (ESC 等) → preedit を Backspace 削除
++    static void ImeUnmarkText(id self, SEL _cmd) {
++        ImGuiIO& io = ImGui::GetIO();
++        EraseCurrentPreedit(io);
++        flog::info("[IME] unmarkText");
++        if (g_origUnmarkText) {
++            ((void (*)(id, SEL))g_origUnmarkText)(self, _cmd);
++        }
++    }
++
++    void ime_macos_init(GLFWwindow* window) {
++        if (!window) {
++            flog::warn("[IME] ime_macos_init: window is null");
++            return;
++        }
++
++        id nsWin = glfwGetCocoaWindow(window);
++        if (!nsWin) {
++            flog::warn("[IME] glfwGetCocoaWindow returned nil");
++            return;
++        }
++        g_imeWindow = (NSWindow*)nsWin;
++
++        Class viewCls = [[g_imeWindow contentView] class];
++        NSString* clsName = NSStringFromClass(viewCls);
++        if (![clsName hasPrefix:@"GLFW"]) {
++            flog::warn("[IME] contentView class is {} (expected GLFWContentView); skipping swizzle", clsName.UTF8String);
++            return;
++        }
++
++        SEL rectSel = @selector(firstRectForCharacterRange:actualRange:);
++        Method rectM = class_getInstanceMethod(viewCls, rectSel);
++        if (rectM) {
++            g_origFirstRect = method_setImplementation(rectM, (IMP)ImeFirstRectForCharacterRange);
++        }
++
++        SEL insertSel = @selector(insertText:replacementRange:);
++        Method insertM = class_getInstanceMethod(viewCls, insertSel);
++        if (insertM) {
++            g_origInsertText = method_setImplementation(insertM, (IMP)ImeInsertText);
++        }
++
++        SEL markSel = @selector(setMarkedText:selectedRange:replacementRange:);
++        Method markM = class_getInstanceMethod(viewCls, markSel);
++        if (markM) {
++            g_origSetMarkedText = method_setImplementation(markM, (IMP)ImeSetMarkedText);
++        }
++
++        SEL unmarkSel = @selector(unmarkText);
++        Method unmarkM = class_getInstanceMethod(viewCls, unmarkSel);
++        if (unmarkM) {
++            g_origUnmarkText = method_setImplementation(unmarkM, (IMP)ImeUnmarkText);
++        }
++
++        ImGui::GetIO().SetPlatformImeDataFn = ImePlatformImeDataFn;
++
++        flog::info("[IME] macOS hook installed on {} (firstRect={}, insertText={}, setMarkedText={}, unmarkText={})",
++                   clsName.UTF8String,
++                   rectM ? "yes" : "no",
++                   insertM ? "yes" : "no",
++                   markM ? "yes" : "no",
++                   unmarkM ? "yes" : "no");
++    }
++
++}
++
++#endif
