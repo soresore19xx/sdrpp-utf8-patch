@@ -4,11 +4,13 @@
 
 ## 背景
 
-SDR++ の同梱フォント `Roboto-Medium.ttf` は Basic Latin + Cyrillic を中心としたグリフ構成で、CJK 文字のグリフは含まれない。そのため `frequency_manager_config.json` に UTF-8 で日本語文字列が保存されていても、ImGui のフォントアトラスに該当グリフが無く画面では `?`(いわゆる豆腐)として描画される。
+SDR++ stock 環境(macOS)では、Frequency Manager → Add のブックマーク名フィールドに日本語を入れる手段がほぼ無い:
 
-また macOS では GLFW の `NSTextInputClient` 実装が ImGui の caret 位置を参照しない実装になっており、IME 候補ウィンドウがアプリ左下隅に出る。preedit (変換中文字列) を ImGui の InputText 内に描画する経路も標準では用意されていないため、CJK の直接入力は実用上難しい状況になっている。
+- **直接入力**: GLFW backend の `NSTextInputClient` 経路が ImGui まで橋渡しされておらず、IME で変換した確定文字列が InputText に届かない。さらに同 backend の `firstRectForCharacterRange:` 標準実装は ImGui の caret 位置を返さないため、IME 候補ウィンドウがアプリ左下隅に固定で出る。preedit (変換中文字列) を InputText 内に描画する経路も標準では用意されていない。
+- **コピー&ペースト**: ペースト自体は通るが、Apply 時に CJK 文字は `?` に置換されて保存される(`frequency_manager_config.json` に `???????` が並ぶ)。
+- **表示**: 同梱フォント `Roboto-Medium.ttf` のグリフ範囲は Basic Latin + Cyrillic が中心で CJK 文字を持たないため、仮に正しい UTF-8 文字列が InputText のバッファに入っても ImGui のフォントアトラスから該当グリフが見つからず、画面では `?` (いわゆる豆腐) として描画される。
 
-本パッチは以下の二段構成で、上記の挙動を CJK 向けに補う:
+本パッチは以下の二段構成で、上記の経路を CJK 向けに補い、直接入力 → Apply → UTF-8 保存までを通す:
 
 1. **CJK font merge** — ImGui の MergeMode で CJK 対応フォントを `baseFont` に統合して描画する
 2. **macOS IME hook** — `GLFWContentView` の `NSTextInputClient` メソッド 4 つ(`firstRectForCharacterRange:`, `insertText:replacementRange:`, `setMarkedText:selectedRange:replacementRange:`, `unmarkText`)を Objective-C runtime swizzle で拡張し、preedit を InputText 内に inline 表示しつつ、確定文字列を `io.AddInputCharactersUTF8()` で commit する
