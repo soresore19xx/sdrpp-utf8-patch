@@ -2,14 +2,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 sdrpp-utf8-patch contributors
 #
-# SDR++ CJK build script — MacPorts 経由で SDR++ を fresh clone してから本リポジトリの
+# sdr++_CJK_build.sh — MacPorts 経由で SDR++ を fresh clone してから本リポジトリの
 # CJK font + macOS IME 両パッチを適用し、ビルドして /Applications/SDR++.app に展開する。
 #
-# 派生元: ~/SSS_PORTS (studio 上の個人運用スクリプト)
-# 違い:
-#   - パッチを ~/SDRPlusPlus_PATCH から読まず、スクリプトと同梱の
-#     ../sdrpp-cjk-font.patch および ../sdrpp-ime-macos.patch を直接 git apply する
-#   - 失敗時に exit 1 で停止
+# 適用するパッチ:
+#   - $REPO_DIR/sdrpp-cjk-font.patch
+#   - $REPO_DIR/sdrpp-ime-macos.patch
+# どちらか欠けていたり、適用に失敗した場合は exit 1 で停止する。
 #
 # 動作環境: macOS + MacPorts (/opt/local), bash, git
 
