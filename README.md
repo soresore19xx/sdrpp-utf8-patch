@@ -31,12 +31,12 @@ SDR++ stock 環境(macOS)では、Frequency Manager → Add のブックマー�
 MacPorts が入っていれば `scripts/sdr++_CJK_build.sh` を実行するだけで依存インストール → fresh clone → パッチ適用 → ビルド → `/Applications/SDR++.app` 展開まで完結する:
 
 ```sh
-git clone https://github.com/<your-fork>/sdrpp-utf8-patch
+git clone https://github.com/soresore19xx/sdrpp-utf8-patch.git
 cd sdrpp-utf8-patch
 ./scripts/sdr++_CJK_build.sh
 ```
 
-`sudo port -N install` を実行するため sudo パスワードを求められる。
+スクリプト内で `sudo port -N install ...` が走るため sudo パスワードを求められる。MacPorts 自体は別途インストール済みである前提(`/opt/local/bin/port` が無ければ <https://www.macports.org/install.php> から入れる)。
 
 ### B. 手動
 
