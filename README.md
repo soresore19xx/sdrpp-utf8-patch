@@ -121,11 +121,14 @@ SDR_IME_LOG=1 stdbuf -oL -eL /path/to/SDR++.app/Contents/MacOS/sdrpp 2>&1 | tee 
 
 #### トラブルシュート
 
+以下は `SDR_IME_LOG=1` を付けた状態を前提とする(default 起動では本文ログは出ない設計)。
+
 | 現象 | 原因と対処 |
 |---|---|
 | `[IME] macOS hook installed` が出ない | パッチが適用されていない、または `OPT_BACKEND_GLFW=ON` でビルドされていない |
+| `[IME] macOS hook installed` 行末が `log=off` のまま | `SDR_IME_LOG=1` 環境変数の設定漏れ。`SDR_IME_LOG=1 stdbuf -oL -eL .../sdrpp 2>&1 \| tee ...` の形で再起動する |
 | `firstRect=no` または `insertText=no` | GLFW の `GLFWContentView` がリネーム/構造変更された可能性。GLFW バージョン確認 |
-| 入力しても `insertText:` ログが一切出ない | accessibility 制約で keystroke が contentView に届いていない。Finder から起動した場合、macOS の InputMonitoring/Accessibility 権限を確認 |
+| `log=on` だが入力しても `insertText:` ログが一切出ない | accessibility 制約で keystroke が contentView に届いていない。Finder から起動した場合、macOS の InputMonitoring/Accessibility 権限を確認 |
 | `setMarkedText:` は出るが `insertText:` が出ない | IME 確定操作が未完了 (preedit 表示中で確定前)。スペースで変換 → Enter で確定 |
 | ASCII 入力(`'a' chars=1` 等)は出るが Japanese が出ない | IME 自体が日本語モードに切り替わっていない可能性がある。`fn` キーや Ctrl + Space で IME 切替を確認 |
 
@@ -160,6 +163,7 @@ SDR_IME_LOG=1 stdbuf -oL -eL /path/to/SDR++.app/Contents/MacOS/sdrpp 2>&1 | tee 
 - **GLFW 自体は無変更**: GLFW のソース修正や fork は不要。MacPorts/Homebrew の標準 `libglfw.3.dylib` をそのまま使う。
 - **二重挿入の回避**: `insertText:` / `setMarkedText:` の元実装は呼ばない(`g_origInsertText` / `g_origSetMarkedText` は保持するが unused)。元実装が `_glfwInputChar` 経由で `io.AddInputCharacter()` を呼ぶため、両方呼ぶと二重挿入になる。
 - **クラス名チェック**: `GLFWContentView` 以外の view class が contentView になっている場合(将来の GLFW 変更等)は swizzle を skip して安全にフォールバックする。
+- **入力内容ログの opt-in 化**: `setMarkedText:` / `insertText:` / `unmarkText` の本文ログは default で出力しない設計にしている。stdout/log ファイルにユーザーがタイプした文字列(ブックマーク名・パスワード等、機密性のあるものも含む)が残ることを避けるため。`getenv("SDR_IME_LOG")` を `ime_macos_init()` 内で 1 回読んで `g_imeLog` に保持し、各 hook 内の `flog::info` 呼び出しを `if (g_imeLog)` でガードする。`SDR_IME_LOG` が unset・空・"0" のいずれかなら OFF。
 
 ## 既知の限界
 
