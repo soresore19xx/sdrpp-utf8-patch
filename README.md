@@ -17,9 +17,24 @@ SDR++ stock のフォントは `Roboto-Medium.ttf` のみで、グリフ範囲�
 |---|---|
 | `sdrpp-cjk-font.patch` | `core/src/gui/style.cpp` への差分(CJK フォントマージ) |
 | `sdrpp-ime-macos.patch` | `core/CMakeLists.txt` + `core/backends/glfw/backend.cpp` への差分 + `core/backends/glfw/ime_macos.{h,mm}` 新規追加(macOS IME caret 位置補正) |
+| `scripts/sdr++_CJK_build.sh` | MacPorts 経由で SDR++ を fresh clone → 上記 2 パッチを適用 → ビルド → `/Applications/SDR++.app` に展開する自動化スクリプト |
 | `README.md` | このファイル |
 
 ## 適用手順
+
+### A. macOS で全自動 (推奨)
+
+MacPorts が入っていれば `scripts/sdr++_CJK_build.sh` を実行するだけで依存インストール → fresh clone → パッチ適用 → ビルド → `/Applications/SDR++.app` 展開まで完結する:
+
+```sh
+git clone https://github.com/<your-fork>/sdrpp-utf8-patch
+cd sdrpp-utf8-patch
+./scripts/sdr++_CJK_build.sh
+```
+
+`sudo port -N install` を実行するため sudo パスワードを求められる。
+
+### B. 手動
 
 ```sh
 # SDR++ を clone
