@@ -175,15 +175,6 @@ SDR_IME_LOG=1 stdbuf -oL -eL /path/to/SDR++.app/Contents/MacOS/sdrpp 2>&1 | tee 
 - **Variable Font 非対応**: stb_truetype v1.20 は variable fonts(`fvar` table)を扱わないため、`NotoSansJP[wght].ttf` のような variable 形式ではなく static 版を使うのが望ましい。本 README の curl URL は static OTF を取得する。
 - **font 容量**: NotoSansCJKjp-Regular.otf は約 16 MB。bundle サイズ重視なら別軽量 CJK フォント(IPAex Gothic 等)に置換可能。
 
-## TODO
-
-- [x] **macOS IME 直接入力対応** — `sdrpp-ime-macos.patch` で対応(GLFWContentView の NSTextInputClient 4 メソッドを swizzle、preedit を InputText 内に inline 表示 + 確定文字列を `io.AddInputCharactersUTF8()` でコミット)
-- [ ] **preedit を下線表示**: 現在は preedit と確定文字列を見た目で区別していない。ImGui 自体に preedit 描画機構を追加すれば視認性が上がる(改修規模大)
-- [ ] **Windows IME 対応**: GLFW Win32 backend の WM_IME_* メッセージを ImGui へ橋渡し
-- [ ] **Linux IME 対応**(fcitx / ibus): GLFW X11/Wayland backend に IM module を組み込む必要あり
-- [ ] **bundle font の軽量化検討**: NotoSansCJKjp-Regular.otf 16MB → IPAex Gothic / M PLUS 1 Code 等の subset で 2〜5MB 程度に圧縮
-- [ ] **パッチ upstream 提案**: SDR++ 本家 (AlexandreRouma/SDRPlusPlus) への PR 化を検討
-
 ## ライセンス
 
 - 本リポジトリの全コード(`sdrpp-cjk-font.patch` / `sdrpp-ime-macos.patch` / `scripts/sdr++_CJK_build.sh` / および patch 経由で SDR++ に追加される `core/backends/glfw/ime_macos.{h,mm}`): **GNU General Public License v3.0 or later (GPL-3.0-or-later)**。SDR++ 本体が GPLv3 であり、本パッチは SDR++ のソースを改変・拡張する派生物として同ライセンスを継承する。全文は本リポジトリ直下の [`LICENSE`](LICENSE) を参照。新規追加ファイルおよびスクリプトには SPDX-License-Identifier コメントを付与済。
