@@ -4,19 +4,21 @@
 
 ## 背景
 
-SDR++ stock のフォントは `Roboto-Medium.ttf` のみで、グリフ範囲は Basic Latin + Cyrillic だけ。`frequency_manager_config.json` には UTF-8 で日本語が正しく保存されているのに、ImGui の atlas に該当グリフが無く、画面では豆腐(`?`)で描画される。さらに macOS では IME の preedit ポップアップ窓が常にウィンドウ左下隅に出るため、変換中の文字が見えず実質直接入力できない。
+SDR++ の同梱フォント `Roboto-Medium.ttf` は Basic Latin + Cyrillic を中心としたグリフ構成で、CJK 文字のグリフは含まれない。そのため `frequency_manager_config.json` に UTF-8 で日本語文字列が保存されていても、ImGui のフォントアトラスに該当グリフが無く画面では `?`(いわゆる豆腐)として描画される。
 
-本パッチは以下の二段構成:
+また macOS では GLFW の `NSTextInputClient` 実装が ImGui の caret 位置を参照しない実装になっており、IME 候補ウィンドウがアプリ左下隅に出る。preedit (変換中文字列) を ImGui の InputText 内に描画する経路も標準では用意されていないため、CJK の直接入力は実用上難しい状況になっている。
 
-1. **CJK font merge** — ImGui の MergeMode で CJK 対応フォントを `baseFont` に統合して描画
-2. **macOS IME hook** — `GLFWContentView` の `NSTextInputClient` メソッド 4 つ(`firstRectForCharacterRange:`, `insertText:replacementRange:`, `setMarkedText:selectedRange:replacementRange:`, `unmarkText`)を Objective-C runtime swizzle で差し替え、preedit (変換中文字列) を InputText 内に inline 表示し、確定文字列を `io.AddInputCharactersUTF8()` で commit する
+本パッチは以下の二段構成で、上記の挙動を CJK 向けに補う:
+
+1. **CJK font merge** — ImGui の MergeMode で CJK 対応フォントを `baseFont` に統合して描画する
+2. **macOS IME hook** — `GLFWContentView` の `NSTextInputClient` メソッド 4 つ(`firstRectForCharacterRange:`, `insertText:replacementRange:`, `setMarkedText:selectedRange:replacementRange:`, `unmarkText`)を Objective-C runtime swizzle で拡張し、preedit を InputText 内に inline 表示しつつ、確定文字列を `io.AddInputCharactersUTF8()` で commit する
 
 ## ファイル
 
 | ファイル | 内容 |
 |---|---|
 | `sdrpp-cjk-font.patch` | `core/src/gui/style.cpp` への差分(CJK フォントマージ) |
-| `sdrpp-ime-macos.patch` | `core/CMakeLists.txt` + `core/backends/glfw/backend.cpp` への差分 + `core/backends/glfw/ime_macos.{h,mm}` 新規追加(macOS IME caret 位置補正) |
+| `sdrpp-ime-macos.patch` | `core/CMakeLists.txt` + `core/backends/glfw/backend.cpp` への差分 + `core/backends/glfw/ime_macos.{h,mm}` 新規追加(macOS IME 連携: caret 位置補正・preedit インライン表示・確定文字列の伝搬) |
 | `scripts/sdr++_CJK_build.sh` | MacPorts 経由で SDR++ を fresh clone → 上記 2 パッチを適用 → ビルド → `/Applications/SDR++.app` に展開する自動化スクリプト |
 | `README.md` | このファイル |
 
@@ -89,7 +91,7 @@ Font atlas built. baseFont glyphs: 3960, IsBuilt=1
 baseFont coverage: U+3042(あ)=yes, U+6F22(漢)=yes
 ```
 
-`baseFont glyphs` が ~467(Latin + Cyrillic だけ)のままなら、マージが効いていない(stb_truetype がフォントを拒否した、または OS にフォントが無い)。
+`baseFont glyphs` が ~467(Latin + Cyrillic のみ)のままならマージが反映されていない可能性がある(stb_truetype がフォントフォーマットを認識できないケース、もしくは OS 側にフォントが見つからないケース)。
 
 ### IME 動作テスト
 
@@ -121,32 +123,32 @@ stdbuf -oL -eL /path/to/SDR++.app/Contents/MacOS/sdrpp 2>&1 | tee /tmp/sdrpp.log
 | `firstRect=no` または `insertText=no` | GLFW の `GLFWContentView` がリネーム/構造変更された可能性。GLFW バージョン確認 |
 | 入力しても `insertText:` ログが一切出ない | accessibility 制約で keystroke が contentView に届いていない。Finder から起動した場合、macOS の InputMonitoring/Accessibility 権限を確認 |
 | `setMarkedText:` は出るが `insertText:` が出ない | IME 確定操作が未完了 (preedit 表示中で確定前)。スペースで変換 → Enter で確定 |
-| ASCII 入力(`'a' chars=1` 等)は出るが Japanese が出ない | IME 自体が動作していない。`fn` キーや控制 + Space で IME 切替を確認 |
+| ASCII 入力(`'a' chars=1` 等)は出るが Japanese が出ない | IME 自体が日本語モードに切り替わっていない可能性がある。`fn` キーや Ctrl + Space で IME 切替を確認 |
 
 ## 実装ノート
 
 ### CJK font merge (`sdrpp-cjk-font.patch`)
 
 - **マージ順序が重要**: ImGui の `MergeMode = true` は **直前に追加された non-merge フォント** に統合される仕様。本パッチは `baseFont` を追加した**直後**に CJK マージを行い、その後で `bigFont` / `hugeFont` を追加する。順序を逆にすると hugeFont 側に CJK が統合されてしまい、Frequency Manager の InputText(baseFont 使用)では描画されなくなる。
-- **`fonts->Build()` 強制呼び出し**: 起動時にグリフ統計を取得して flog 出力するため。実害は無いが本番運用で気になれば削除可。
-- **`std::filesystem::exists` チェック**: フォント候補リストを順次評価し、存在するものから順に試す。`AddFontFromFileTTF` が NULL を返した場合(stb_truetype がフォーマット拒否)は次の候補へフォールバックする。
+- **`fonts->Build()` 明示呼び出し**: 起動時にグリフ統計を取得して flog 出力する目的。副作用は無いが、本番運用で不要なら削除可。
+- **`std::filesystem::exists` チェック**: フォント候補リストを順次評価し、存在するものから順に試す。`AddFontFromFileTTF` が NULL を返した場合(stb_truetype が当該フォーマットを扱えない場合等)は次の候補へフォールバックする。
 
 ### macOS IME hook (`sdrpp-ime-macos.patch`)
 
-#### 解決する問題
+#### 前提となる挙動
 
-1. **preedit ポップアップが画面左下に出る**: GLFW の `firstRectForCharacterRange:actualRange:` は `NSMakeRect(frame.origin.x, frame.origin.y, 0, 0)` を返すだけで、ImGui の caret 位置を知らない。IME はこの戻り値を見て候補窓を配置するため、結果的に window 左下隅に出る。
-2. **preedit (変換中文字列) が InputText に inline 表示されない**: macOS IME は native NSTextField 等の widget が独自に inline preedit 描画する仕様だが、GLFW + ImGui はその描画コードを持たない → 変換中の文字が完全に「見えない」状態になる。
-3. **確定文字列が ImGui に届かないことがある**: 理屈上は `insertText:` → `_glfwInputChar()` → `glfwSetCharCallback` → ImGui の `io.AddInputCharacter()` で届くはずだが、GLFW 3.4 + macOS 26 (Tahoe) で `IMKCFRunLoopWakeUpReliable` エラーと共に確定文字列が ImGui に到達しないケースを観測。
+1. **IME 候補ウィンドウの位置**: GLFW の `firstRectForCharacterRange:actualRange:` 標準実装は `NSMakeRect(frame.origin.x, frame.origin.y, 0, 0)` を返す。ImGui 側の caret 位置を渡す経路が無いため、IME はこの戻り値を見て候補窓をウィンドウ左下隅に配置する。
+2. **preedit (変換中文字列) のインライン表示**: macOS の IME は native NSTextField 等の widget が `setMarkedText:` を介して自分で preedit を描画する設計になっている。GLFW + ImGui の組み合わせはこの描画経路を持たないため、変換中の文字列は標準では画面に現れない。
+3. **確定文字列の伝搬**: 仕様上は `insertText:` → `_glfwInputChar()` → `glfwSetCharCallback` → ImGui の `io.AddInputCharacter()` で届くが、GLFW 3.4 + macOS 26 (Tahoe) の組み合わせでは `IMKCFRunLoopWakeUpReliable` の警告ログと共に CharCallback 経路で確定文字列が ImGui に到達しないケースを観測した。
 
-#### 本パッチの修正
+#### 本パッチの実装
 
-`NSTextInputClient` 4 メソッドを `method_setImplementation()` で差し替える:
+`NSTextInputClient` 4 メソッドを `method_setImplementation()` で拡張する:
 
 1. **`firstRectForCharacterRange:actualRange:`** → ImGui の `SetPlatformImeDataFn` で取得した caret 位置を screen rect で返す → IME 候補窓が caret 直下に出る。
 2. **`setMarkedText:selectedRange:replacementRange:`** → 直前の preedit 文字数だけ `io.AddKeyEvent(ImGuiKey_Backspace)` を発火して削除 → 新 preedit を `io.AddInputCharactersUTF8()` で挿入 → preedit が InputText 内に inline 表示される(`ｎ→に→にｈ→にほ→にほｎ→日本`)。
-3. **`insertText:replacementRange:`** → 同じく直前 preedit を Backspace で削除 → 確定文字列を挿入。GLFW の `_glfwInputChar` 経路を経由しないので CharCallback 経路の不確実性を回避。
-4. **`unmarkText`** → IME キャンセル時に preedit を Backspace で削除 → 元実装も呼ぶ(GLFW の内部 markedText state 整合のため)。
+3. **`insertText:replacementRange:`** → 同じく直前 preedit を Backspace で削除 → 確定文字列を挿入。GLFW の `_glfwInputChar` 経路に依存せず、確定文字列を直接 ImGui に届けるため CharCallback 経路の取りこぼしも回避できる。
+4. **`unmarkText`** → IME キャンセル時に preedit を Backspace で削除 → 元実装も呼ぶ(GLFW の内部 markedText state を保つため)。
 
 #### 設計ノート
 
@@ -160,16 +162,15 @@ stdbuf -oL -eL /path/to/SDR++.app/Contents/MacOS/sdrpp 2>&1 | tee /tmp/sdrpp.log
 - **preedit と確定文字列の見た目が同じ**: macOS の native NSTextField では preedit が下線付きで表示されて「これは未確定だよ」と区別されるが、本パッチは普通の文字として挿入してから Backspace で書き換えるため preedit ↔ 確定の見分けが付かない。実用上は気にならないが、長文入力時に「Enter 押し忘れ」のリスクがある。
 - **preedit 中に caret 移動・選択範囲操作するとズレる**: Backspace 発火数は「直前 preedit の codepoint 数」を仮定しているため、preedit 中にカーソル移動・選択・他のキー入力等で caret 位置が動くと、Backspace 削除が意図しない文字を消す可能性がある。実用上は IME 入力中は他の操作をしないので問題になりにくい。
 - **Windows / Linux IME 未対応**: 当パッチは macOS 専用(`__APPLE__` ガード)。Windows IME(WM_IME_*)・Linux fcitx/ibus は GLFW 側で別途バインドが必要。
-- **Variable Font 非対応**: stb_truetype v1.20 は variable fonts(`fvar` table)を解釈しないため、`NotoSansJP[wght].ttf` のような variable 形式は static 版を使うべき。本 README の curl URL は static OTF を取得する。
+- **Variable Font 非対応**: stb_truetype v1.20 は variable fonts(`fvar` table)を扱わないため、`NotoSansJP[wght].ttf` のような variable 形式ではなく static 版を使うのが望ましい。本 README の curl URL は static OTF を取得する。
 - **font 容量**: NotoSansCJKjp-Regular.otf は約 16 MB。bundle サイズ重視なら別軽量 CJK フォント(IPAex Gothic 等)に置換可能。
 
 ## TODO
 
-- [x] **macOS IME 直接入力対応** — `sdrpp-ime-macos.patch` で対応(GLFWContentView の NSTextInputClient 4 メソッドを swizzle、preedit を InputText 内に inline 表示 + 確定文字列を io.AddInputCharactersUTF8 でコミット)
-- [ ] **preedit を下線表示**: 現在は preedit と確定文字列が見た目で区別できない。ImGui 自体に preedit 描画機構を追加すれば視認性が上がる(改修規模大)
-- [ ] **Windows IME 対応** — GLFW Win32 backend の WM_IME_* メッセージを ImGui へ橋渡し
-- [ ] **Linux IME 対応**(fcitx / ibus) — GLFW X11/Wayland backend に IM module を組み込む必要あり
-- [ ] **macOS preedit インライン表示**: 変換中文字列を InputText 内に表示する(現状は独立ポップアップ窓)。`setMarkedText:` を ImGui 描画と統合する必要があり、ImGui 自体への preedit 描画機構の追加が必要
+- [x] **macOS IME 直接入力対応** — `sdrpp-ime-macos.patch` で対応(GLFWContentView の NSTextInputClient 4 メソッドを swizzle、preedit を InputText 内に inline 表示 + 確定文字列を `io.AddInputCharactersUTF8()` でコミット)
+- [ ] **preedit を下線表示**: 現在は preedit と確定文字列を見た目で区別していない。ImGui 自体に preedit 描画機構を追加すれば視認性が上がる(改修規模大)
+- [ ] **Windows IME 対応**: GLFW Win32 backend の WM_IME_* メッセージを ImGui へ橋渡し
+- [ ] **Linux IME 対応**(fcitx / ibus): GLFW X11/Wayland backend に IM module を組み込む必要あり
 - [ ] **bundle font の軽量化検討**: NotoSansCJKjp-Regular.otf 16MB → IPAex Gothic / M PLUS 1 Code 等の subset で 2〜5MB 程度に圧縮
 - [ ] **パッチ upstream 提案**: SDR++ 本家 (AlexandreRouma/SDRPlusPlus) への PR 化を検討
 
