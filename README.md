@@ -1,6 +1,6 @@
 # sdrpp-utf8-patch
 
-[SDR++](https://github.com/AlexandreRouma/SDRPlusPlus) で CJK 文字(日本語等)を表示・入力・保存できるようにするパッチ。Frequency Manager のブックマーク名等に macOS IME で日本語が直接入力できる。
+**macOS 向けの** [SDR++](https://github.com/AlexandreRouma/SDRPlusPlus) パッチ。CJK 文字(日本語等)を表示・入力・保存できるようにし、Frequency Manager のブックマーク名等で macOS IME による日本語の直接入力を可能にする。CJK フォントマージ部のみは Windows / Linux でもビルド可能だが、IME 連携は `__APPLE__` ガードで macOS 専用。
 
 ## 背景
 
