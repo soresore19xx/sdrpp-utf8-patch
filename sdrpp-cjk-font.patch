@@ -1,8 +1,8 @@
 diff --git a/core/src/gui/style.cpp b/core/src/gui/style.cpp
-index d539abef..e0804c12 100644
+index d539abef..d3fd9b51 100644
 --- a/core/src/gui/style.cpp
 +++ b/core/src/gui/style.cpp
-@@ -43,12 +43,65 @@ namespace style {
+@@ -43,12 +43,75 @@ namespace style {
          const ImWchar hugeRange[] = { 'S', 'S', 'D', 'D', 'R', 'R', '+', '+', ' ', ' ', 0 };
          hugeBuilder.AddRanges(hugeRange);
          hugeBuilder.BuildRanges(&hugeRanges);
@@ -14,6 +14,13 @@ index d539abef..e0804c12 100644
 +        // so the CJK merge below MUST come right after baseFont is added (before bigFont/hugeFont).
 +        // Merge a CJK fallback into baseFont so bookmark names etc. render correctly.
 +        // Search order: bundled (res/fonts), then OS-bundled system font.
++        // CJK glyphs are intrinsically taller than Latin caps at the same pixel size,
++        // so the merged CJK font is loaded at a slightly smaller size (cjkSize) for visual balance.
++        // ImGui MergeMode aligns the merged font's baseline with the master font's Ascent, which
++        // already gives a good Latin↔CJK vertical balance for Hiragino at cjkSize=13. No extra
++        // GlyphOffset.y is applied — adding a downward nudge made CJK sit too low in tight UI
++        // such as FFT bookmark labels.
++        const float cjkSize = 13.0f * uiScale;
 +        ImFontConfig cfgCJK;
 +        cfgCJK.MergeMode = true;
 +        cfgCJK.PixelSnapH = true;
@@ -22,6 +29,9 @@ index d539abef..e0804c12 100644
 +            resDir + "/fonts/NotoSansJP-Regular.ttf",
 +            resDir + "/fonts/NotoSansCJK-Regular.ttc",
 +#ifdef __APPLE__
++            // Prefer W6 (Bold) over W3 (Regular) so CJK stroke weight visually
++            // matches Roboto-Medium (the base Latin font).
++            "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc",
 +            "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
 +            "/System/Library/Fonts/Hiragino Sans GB.ttc",
 +            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
@@ -40,7 +50,7 @@ index d539abef..e0804c12 100644
 +                flog::info("CJK font candidate not found: {}", p);
 +                continue;
 +            }
-+            ImFont* f = fonts->AddFontFromFileTTF(p.c_str(), 16.0f * uiScale, &cfgCJK, cjkRanges);
++            ImFont* f = fonts->AddFontFromFileTTF(p.c_str(), cjkSize, &cfgCJK, cjkRanges);
 +            if (f) {
 +                flog::info("CJK font merged: {}", p);
 +                cjkLoaded = true;
