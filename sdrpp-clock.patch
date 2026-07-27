@@ -1,0 +1,59 @@
+diff --git a/core/src/gui/main_window.cpp b/core/src/gui/main_window.cpp
+index 65436fe..c7980fe 100644
+--- a/core/src/gui/main_window.cpp
++++ b/core/src/gui/main_window.cpp
+@@ -2,6 +2,7 @@
+ #include <gui/gui.h>
+ #include "imgui.h"
+ #include <stdio.h>
++#include <time.h>
+ #include <thread>
+ #include <complex>
+ #include <gui/widgets/waterfall.h>
+@@ -406,6 +407,33 @@ void MainWindow::draw() {
+ 
+     ImGui::SameLine();
+ 
++    // Clock (local date+time / UTC), centered in the top bar. Clamped right of the tuning
++    // button when the window is narrow. Drawn before the SNR meter position is computed so
++    // the meter yields width instead of overlapping. bigRange in style.cpp is widened to
++    // cover the non-digit glyphs.
++    {
++        time_t now = time(NULL);
++        struct tm lt, ut;
++        localtime_r(&now, &lt);
++        gmtime_r(&now, &ut);
++        char localPart[40];
++        strftime(localPart, sizeof(localPart), "%Y-%m-%d %H:%M:%S %Z", &lt);
++        char clockStr[64];
++        snprintf(clockStr, sizeof(clockStr), "%s / %02d:%02d:%02d UTC", localPart, ut.tm_hour, ut.tm_min, ut.tm_sec);
++        ImGui::PushFont(style::bigFont);
++        ImGui::SetWindowFontScale(30.0f / 45.0f);
++        ImVec2 clockSize = ImGui::CalcTextSize(clockStr);
++        float clockX = (ImGui::GetWindowSize().x - clockSize.x) * 0.5f;
++        float minX = ImGui::GetCursorPosX() + (15.0f * style::uiScale);
++        if (clockX < minX) { clockX = minX; }
++        ImGui::SetCursorPosX(clockX);
++        ImGui::SetCursorPosY(origY + ((btnSize.y - clockSize.y) * 0.5f));
++        ImGui::TextUnformatted(clockStr);
++        ImGui::SetWindowFontScale(1.0f);
++        ImGui::PopFont();
++        ImGui::SameLine();
++    }
++
+     int snrOffset = 87.0f * style::uiScale;
+     int snrWidth = std::clamp<int>(ImGui::GetWindowSize().x - ImGui::GetCursorPosX() - snrOffset, 100.0f * style::uiScale, 300.0f * style::uiScale);
+     int snrPos = std::max<int>(ImGui::GetWindowSize().x - (snrWidth + snrOffset), ImGui::GetCursorPosX());
+diff --git a/core/src/gui/style.cpp b/core/src/gui/style.cpp
+index d539abe..4b0012a 100644
+--- a/core/src/gui/style.cpp
++++ b/core/src/gui/style.cpp
+@@ -34,7 +34,7 @@ namespace style {
+ 
+         // Create big font range
+         ImFontGlyphRangesBuilder bigBuilder;
+-        const ImWchar bigRange[] = { '.', '9', 0 };
++        const ImWchar bigRange[] = { ' ', 'Z', 0 }; // widened from '.'-'9' for the top-bar clock (space, ':', '/', A-Z)
+         bigBuilder.AddRanges(bigRange);
+         bigBuilder.BuildRanges(&bigRanges);
+ 

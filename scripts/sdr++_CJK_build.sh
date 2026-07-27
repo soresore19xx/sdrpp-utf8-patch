@@ -8,7 +8,8 @@
 # 適用するパッチ:
 #   - $REPO_DIR/sdrpp-cjk-font.patch
 #   - $REPO_DIR/sdrpp-ime-macos.patch
-# どちらか欠けていたり、適用に失敗した場合は exit 1 で停止する。
+#   - $REPO_DIR/sdrpp-clock.patch
+# いずれかが欠けていたり、適用に失敗した場合は exit 1 で停止する。
 #
 # 動作環境: macOS + MacPorts (/opt/local), bash, git
 
@@ -19,8 +20,9 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 PATCH_CJK="$REPO_DIR/sdrpp-cjk-font.patch"
 PATCH_IME="$REPO_DIR/sdrpp-ime-macos.patch"
+PATCH_CLOCK="$REPO_DIR/sdrpp-clock.patch"
 
-for p in "$PATCH_CJK" "$PATCH_IME"; do
+for p in "$PATCH_CJK" "$PATCH_IME" "$PATCH_CLOCK"; do
     if [ ! -s "$p" ]; then
         echo "ERROR: patch not found: $p" >&2
         exit 1
@@ -36,11 +38,13 @@ rm -rf SDRPlusPlus
 git clone https://github.com/AlexandreRouma/SDRPlusPlus
 cd SDRPlusPlus
 
-# 3. パッチ適用 (CJK font merge → macOS IME hook の順)
+# 3. パッチ適用 (CJK font merge → macOS IME hook → clock の順)
 echo "Applying: $PATCH_CJK"
 git apply --whitespace=nowarn "$PATCH_CJK"
 echo "Applying: $PATCH_IME"
 git apply --whitespace=nowarn "$PATCH_IME"
+echo "Applying: $PATCH_CLOCK"
+git apply --whitespace=nowarn "$PATCH_CLOCK"
 
 # 4. ビルド (MacPorts の cmake を明示)
 mkdir build

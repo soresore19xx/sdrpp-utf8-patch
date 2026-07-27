@@ -17,6 +17,7 @@ SDR++ stock 環境(macOS)では Frequency Manager → Add に日本語を入れ�
 |---|---|
 | `sdrpp-cjk-font.patch` | `core/src/gui/style.cpp` に CJK フォントマージを追加 |
 | `sdrpp-ime-macos.patch` | macOS IME 連携(caret 位置補正・preedit インライン表示・確定文字列伝搬) |
+| `sdrpp-clock.patch` | トップバー中央に年月日付きローカル + UTC 時計を bigFont 30px 相当で常時表示(例: `2026-07-27 21:45:30 JST / 12:45:30 UTC`)。狭い窓ではチューニングボタンの右まで退避し、SNR メータは残り幅に応じて自動的に縮む。`style.cpp` の bigFont グリフ範囲を空白〜`Z` に拡張(UTF-8 対応とは独立したおまけ。単独でも適用可) |
 | `scripts/sdr++_CJK_build.sh` | MacPorts 経由で fresh clone → パッチ適用 → ビルド → `/Applications/SDR++.app` 展開する自動化スクリプト |
 
 ## 適用手順
@@ -31,7 +32,7 @@ cd sdrpp-utf8-patch
 
 スクリプト内で `sudo port -N install ...` が走るため sudo パスワードを求められる。MacPorts 未インストールなら <https://www.macports.org/install.php>。
 
-手動で適用したい場合は `git apply --whitespace=nowarn <patch>` で 2 パッチを当ててから SDR++ 標準のビルドフロー (cmake / make / make_macos_bundle.sh) を実行する。
+手動で適用したい場合は `git apply --whitespace=nowarn <patch>` で必要なパッチを当ててから SDR++ 標準のビルドフロー (cmake / make / make_macos_bundle.sh) を実行する。3 パッチは互いに独立しており、任意の組み合わせで適用できる(スクリプトは 3 本すべてを適用する)。
 
 ## 動作確認
 
